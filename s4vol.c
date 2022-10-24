@@ -255,6 +255,7 @@ static int s4vol_parse_args( int argc, char **argv, s4volcx *cx )
               cx->infile = argv[1]; 
               cx->outfile = argv[1];
               cx->inout  = 1;
+              continue;
             }
         }
 
@@ -486,6 +487,7 @@ static int s4vol_consider( s4volcx *cx )
         cx->plen *= 1024;
       else if( 'm' == *p || 'M' == *p )
         cx->plen *= (1024 * 1024);
+      cx->pagetrks = s4vol_tracks_needed( cx, cx->plen, cx->pstrk );
     }
 
   /* but if floppy, forget paging */
@@ -572,7 +574,7 @@ static int s4vol_execute( s4volcx *cx )
   memset( fsu.buf, 0, sizeof(fsu.buf) );
   fsu.bbt[0].cyl    = S4_NO_BB_CHECKSUM;  /* turn off BBT and LBA mapping */
   fsu.bbt[0].badblk = S4_NO_BB_CHECKSUM; 
-  if( s4_ok != s4_seek_write( cx->ovinfo.fd, cx->ovinfo.bbt_ba/512, 
+  if( s4_ok != s4_seek_write( cx->ovinfo.fd, cx->ovinfo.bbt_ba*512, 
                               fsu.buf, sizeof(fsu.buf) ) )
     {
       rv++;
@@ -719,6 +721,8 @@ static int s4vol_read_open( char *fn, int *fd, long *len )
 
 static int s4vol_new_vhbd( s4volcx *cx )
 {
+  uint32_t         chksum = 0;
+  int              i;
   int              rv = 0;
   struct s4_vhbd  *vh = cx->ovhbd;
 
@@ -766,6 +770,11 @@ static int s4vol_new_vhbd( s4volcx *cx )
   s4_fsu_show( (s4_fsu*)vh, s4b_vhbd );  
 
   s4_fsu_swap( (s4_fsu*)vh, s4b_vhbd );
+  /* Compute the checksum */
+  for(i=0; i < 512 / sizeof(uint32_t); i++)
+	  chksum += s4swapi(((uint32_t*)vh)[i]);
+  vh->chksum  = s4swapi(-1-chksum);
+ 
   if( s4_ok != s4_seek_write( cx->ovinfo.fd, 0, (char*)vh, 512 ))
     rv++;
 
